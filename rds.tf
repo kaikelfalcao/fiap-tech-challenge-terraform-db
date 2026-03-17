@@ -74,7 +74,7 @@ resource "aws_db_instance" "this" {
   final_snapshot_identifier = var.db_skip_final_snapshot ? null : "${var.project_name}-${var.environment}-final-snapshot"
 
   copy_tags_to_snapshot = true
-  publicly_accessible  = false
+  publicly_accessible   = false
 
   performance_insights_enabled = var.environment == "prod"
 
