@@ -4,7 +4,7 @@ project_name = "fiap-tcdb"
 
 # RDS
 db_engine_version        = "16.3"
-db_instance_class        = "db.t3.small"
+db_instance_class        = "db.t3.micro"
 db_allocated_storage     = 20
 db_max_allocated_storage = 100
 db_name                  = "app"
