@@ -3,7 +3,7 @@ terraform {
     bucket         = "fiap-tech-challenge-tfstate-fase3-matheus"
     key            = "db-infra/terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "fiap-tech-challenge-tflock"
+    dynamodb_table = "fiap-tech-challenge-tflock-matheus"
     encrypt        = true
   }
 }
@@ -26,7 +26,7 @@ data "terraform_remote_state" "k8s" {
   backend = "s3"
 
   config = {
-    bucket = "fiap-tech-challenge-tfstate-fase3"
+    bucket = "fiap-tech-challenge-tfstate-fase3-matheus"
     key    = "k8s-infra/terraform.tfstate"
     region = var.region
   }
