@@ -10,6 +10,6 @@ db_max_allocated_storage   = 200
 db_name                    = "app"
 db_username                = "app"
 db_multi_az                = true
-db_backup_retention_period = 14
+db_backup_retention_period = 1
 db_deletion_protection     = true
 db_skip_final_snapshot     = false
