@@ -28,11 +28,6 @@ resource "aws_db_parameter_group" "this" {
     value = "1"
   }
 
-  parameter {
-    name  = "shared_preload_libraries"
-    value = "pg_stat_statements"
-  }
-
   lifecycle {
     create_before_destroy = true
   }
