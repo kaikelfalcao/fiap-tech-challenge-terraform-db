@@ -14,23 +14,27 @@ resource "aws_db_parameter_group" "this" {
   description = "Custom parameter group for PostgreSQL 16"
 
   parameter {
-    name  = "log_connections"
-    value = "1"
+    name         = "log_connections"
+    value        = "1"
+    apply_method = "immediate"
   }
 
   parameter {
-    name  = "log_disconnections"
-    value = "1"
+    name         = "log_disconnections"
+    value        = "1"
+    apply_method = "immediate"
   }
 
   parameter {
-    name  = "log_duration"
-    value = "1"
+    name         = "log_duration"
+    value        = "1"
+    apply_method = "immediate"
   }
 
   parameter {
-    name  = "shared_preload_libraries"
-    value = "pg_stat_statements"
+    name         = "shared_preload_libraries"
+    value        = "pg_stat_statements"
+    apply_method = "pending-reboot"
   }
 
   lifecycle {
@@ -74,7 +78,7 @@ resource "aws_db_instance" "this" {
   final_snapshot_identifier = var.db_skip_final_snapshot ? null : "${var.project_name}-${var.environment}-final-snapshot"
 
   copy_tags_to_snapshot = true
-  publicly_accessible  = false
+  publicly_accessible   = false
 
   performance_insights_enabled = var.environment == "prod"
 

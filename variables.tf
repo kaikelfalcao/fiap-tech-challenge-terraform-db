@@ -82,3 +82,8 @@ variable "db_skip_final_snapshot" {
   type        = bool
   default     = true
 }
+
+variable "tfstate_bucket" {
+  description = "Bucket S3 do Terraform state do k8s (gerado dinamicamente pelo account ID)"
+  type        = string
+}

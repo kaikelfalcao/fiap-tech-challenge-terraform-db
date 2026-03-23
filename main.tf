@@ -1,13 +1,3 @@
-terraform {
-  backend "s3" {
-    bucket         = "fiap-tech-challenge-tfstate-fase3"
-    key            = "db-infra/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "fiap-tech-challenge-tflock"
-    encrypt        = true
-  }
-}
-
 provider "aws" {
   region = var.region
 
@@ -21,12 +11,10 @@ provider "aws" {
   }
 }
 
-
 data "terraform_remote_state" "k8s" {
   backend = "s3"
-
   config = {
-    bucket = "fiap-tech-challenge-tfstate-fase3"
+    bucket = var.tfstate_bucket
     key    = "k8s-infra/terraform.tfstate"
     region = var.region
   }
