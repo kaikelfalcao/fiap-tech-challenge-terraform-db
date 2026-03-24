@@ -36,7 +36,7 @@ output "db_arn" {
 
 output "db_password" {
   description = "Database master password (sensitive — stored encrypted in S3 state)"
-  value       = var.db_password
+  value       = random_password.db.result
   sensitive   = true
 }
 

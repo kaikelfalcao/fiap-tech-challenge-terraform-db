@@ -1,20 +1,21 @@
-name: Terraform PR Validation
+name: Terraform Deploy
 
 on:
-  pull_request:
-    branches: [develop, main]
+  push:
+    branches: [main]
 
 concurrency:
-  group: terraform-pr-${{ github.event.pull_request.base.ref }}
-  cancel-in-progress: true
+  group: terraform-deploy-${{ github.ref_name }}
+  cancel-in-progress: false
 
 env:
   AWS_REGION: us-east-1
   TF_VAR_FILE: environments/dev.tfvars
 
 jobs:
-  validate:
+  deploy:
     runs-on: ubuntu-latest
+    environment: production
 
     steps:
       - uses: actions/checkout@v4
@@ -34,10 +35,15 @@ jobs:
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET="fiap-tc-tfstate-${ACCOUNT_ID}"
-          echo "TF_STATE_BUCKET=${BUCKET}" >> $GITHUB_ENV
-
-          aws s3 ls "s3://${BUCKET}" > /dev/null 2>&1 || aws s3 mb "s3://${BUCKET}" --region ${{ env.AWS_REGION }}
-
+          aws s3 ls "s3://${BUCKET}" > /dev/null 2>&1 || \
+            aws s3 mb "s3://${BUCKET}" --region ${{ env.AWS_REGION }}
+          aws s3api put-bucket-versioning \
+            --bucket "$BUCKET" \
+            --versioning-configuration Status=Enabled 2>/dev/null || true
+          aws s3api put-bucket-encryption \
+            --bucket "$BUCKET" \
+            --server-side-encryption-configuration \
+            '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}' 2>/dev/null || true
           cat > backend.tf << EOF
           terraform {
             backend "s3" {
@@ -51,14 +57,8 @@ jobs:
           EOF
 
       - run: terraform init -input=false
-      - run: terraform fmt -check -recursive
-      - run: terraform validate
 
       - name: Terraform Apply
         run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          BUCKET="fiap-tc-tfstate-${ACCOUNT_ID}"
           terraform apply -auto-approve -input=false \
-            -var-file="${{ env.TF_VAR_FILE }}" \
-            -var="db_password=${{ secrets.DB_PASSWORD }}" \
-            -var="tfstate_bucket=${BUCKET}"
+            -var-file="${{ env.TF_VAR_FILE }}"

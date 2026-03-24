@@ -1,77 +1,143 @@
-# FIAP Tech Challenge - Database Infrastructure
+# fiap-tech-challenge-terraform-db
 
-Terraform para provisionamento do banco de dados PostgreSQL (RDS) na AWS.
+Infraestrutura de banco de dados do **AutoFlow** — provisiona RDS PostgreSQL
+via Terraform, integrando-se à VPC e Security Groups criados pelo repo k8s.
 
-## Recursos Provisionados
+## Tecnologias
 
-- **RDS PostgreSQL 16** com storage encriptado (gp3)
-- **DB Subnet Group** usando subnets privadas da VPC do EKS
-- **Parameter Group** customizado com logging e pg_stat_statements
-- **Backups automaticos** com retencao configuravel
-- **Multi-AZ** (habilitado em producao)
-- **Performance Insights** (habilitado em producao)
+| Camada | Tecnologia                         |
+| ------ | ---------------------------------- |
+| Cloud  | AWS RDS PostgreSQL 16              |
+| IaC    | Terraform 1.5+                     |
+| CI/CD  | GitHub Actions                     |
 
-## Pre-requisitos
+## Posição no fluxo multi-repo
 
-- Terraform >= 1.5.0
-- AWS CLI configurado com credenciais
-- S3 bucket e DynamoDB table para remote state
-- **Repositorio `fiap-tech-challenge-k8s-infra` aplicado** (necessario para VPC, subnets e security groups)
-
-## Dependencia
-
-Este repositorio depende dos outputs do `fiap-tech-challenge-k8s-infra` via `terraform_remote_state`. Certifique-se de que o repositorio de infra K8s foi aplicado antes de aplicar este.
-
-Dados consumidos do remote state:
-- `private_subnet_ids` - subnets para o DB subnet group
-- `rds_security_group_id` - security group que permite acesso dos nodes EKS
-
-## Uso
-
-```bash
-# Inicializar
-terraform init
-
-# Planejar (dev)
-terraform plan -var-file=environments/dev.tfvars -var="db_password=SUA_SENHA_SEGURA"
-
-# Aplicar (dev)
-terraform apply -var-file=environments/dev.tfvars -var="db_password=SUA_SENHA_SEGURA"
+```
+1. k8s  (Fase 1)  →  cria VPC, subnets privadas, SG do RDS   ← pré-requisito
+2. db   (este)    →  lê outputs do k8s via S3, cria RDS
+3. lambda         →  lê DB endpoint + credenciais do state deste repo
+4. codebase       →  lê DB endpoint + credenciais do state deste repo
 ```
 
-> **Nota:** A senha do banco de dados deve ser passada via variavel `-var` ou variavel de ambiente `TF_VAR_db_password`. Nunca armazene senhas em arquivos tfvars.
+Este repo lê do state S3 do repo k8s:
+- `private_subnet_ids` — para o DB Subnet Group
+- `rds_security_group_id` — para o Security Group da instância
+
+O state deste repo fica em:
+`s3://fiap-tc-tfstate-{ACCOUNT_ID}/db-infra/terraform.tfstate`
+
+Outros repos leem daqui sem precisar de secrets manuais:
+
+| Output         | Lido por           |
+| -------------- | ------------------ |
+| `db_address`   | lambda, codebase   |
+| `db_name`      | lambda, codebase   |
+| `db_username`  | lambda, codebase   |
+| `db_password`  | lambda, codebase   |
+| `db_port`      | lambda, codebase   |
+
+## Senha do banco
+
+A senha é **gerada automaticamente** pelo Terraform (`random_password`) e
+gravada encriptada no state S3. Nenhum secret manual é necessário no GitHub
+e nenhuma senha precisa ser inventada ou rotacionada manualmente.
+
+Para ver a senha após o apply:
+```bash
+terraform output -raw db_password
+# ou
+aws s3 cp s3://fiap-tc-tfstate-{ACCOUNT_ID}/db-infra/terraform.tfstate - | \
+  jq -r '.outputs.db_password.value'
+```
+
+## Estrutura
+
+```
+main.tf          ← provider AWS + data source do state k8s
+rds.tf           ← random_password + subnet group + parameter group + instância
+outputs.tf       ← endpoint, credenciais (sensitive)
+variables.tf     ← configurações sem dados sensíveis
+versions.tf      ← versões dos providers (aws ~> 5.40, random ~> 3.6)
+
+environments/
+  dev.tfvars     ← db.t3.micro, 20 GB, single-AZ
+  staging.tfvars ← db.t3.small, 20 GB, single-AZ
+  prod.tfvars    ← db.r6g.large, 50 GB, multi-AZ, delete protection
+
+scripts/
+  bootstrap.sh      ← cria bucket S3 e gera backend.tf
+  local-plan.sh     ← valida plano localmente
+  local-apply.sh    ← cria o RDS localmente
+  local-destroy.sh  ← destrói o RDS localmente (com confirmação)
+```
+
+## Secrets no GitHub
+
+| Secret                  | Descrição                                         |
+| ----------------------- | ------------------------------------------------- |
+| `AWS_ACCESS_KEY_ID`     | Credencial AWS Lab                                |
+| `AWS_SECRET_ACCESS_KEY` | Credencial AWS Lab                                |
+| `AWS_SESSION_TOKEN`     | Session token (obrigatório no Lab, expira em ~4h) |
+
+Não há secret de senha — ela é gerada automaticamente.
+
+## CI/CD
+
+| Evento         | Comportamento                         |
+| -------------- | ------------------------------------- |
+| PR para `main` | `terraform fmt` + `validate` + `plan` |
+| Merge em `main`| `terraform apply` automático          |
+
+## Subir localmente
+
+### 1. Pré-requisito
+
+O repo **k8s deve estar deployado** antes (Fase 1 já aplicada).
+
+### 2. Credenciais
+
+```bash
+cp .env.local.example .env.local
+# edite com AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+```
+
+### 3. Aplicar
+
+```bash
+./scripts/local-apply.sh
+# ou para outro ambiente:
+./scripts/local-apply.sh environments/staging.tfvars
+```
+
+Isso executa automaticamente:
+- `bootstrap.sh` (cria/valida bucket S3, gera `backend.tf`)
+- `terraform init`
+- `terraform apply` (cria RDS em ~5 min)
+- Exibe o endpoint ao final
+
+### 4. Validar sem aplicar
+
+```bash
+./scripts/local-plan.sh
+```
+
+### 5. Destruir
+
+```bash
+./scripts/local-destroy.sh
+```
+
+O script pede confirmação digitando `destroy`. Remove o RDS e o state file
+`db-infra/terraform.tfstate` do bucket S3.
+
+> Se `db_deletion_protection = true` (prod), o destroy vai falhar por design.
+> Use o tfvars de dev ou ajuste a variável antes.
 
 ## Ambientes
 
-| Arquivo | Descricao |
-|---------|-----------|
-| `environments/dev.tfvars` | Desenvolvimento - db.t3.micro, single-AZ, 20GB |
-| `environments/staging.tfvars` | Staging - db.t3.small, single-AZ, 20GB |
-| `environments/prod.tfvars` | Producao - db.r6g.large, multi-AZ, 50GB, delete protection |
-
-## Outputs
-
-| Output | Descricao |
-|--------|-----------|
-| `db_endpoint` | Endpoint completo (host:port) |
-| `db_address` | Hostname do RDS |
-| `db_port` | Porta do banco (5432) |
-| `db_name` | Nome do banco de dados |
-| `db_username` | Usuario master |
-| `db_connection_info` | Mapa com variaveis de ambiente para a aplicacao |
-
-## Configurando a Aplicacao
-
-Apos aplicar o Terraform, use os outputs para configurar as variaveis de ambiente da aplicacao:
-
-```bash
-# Obter informacoes de conexao
-terraform output -json db_connection_info
-
-# Variaveis necessarias pela aplicacao:
-# DATABASE_HOST = db_address
-# DATABASE_PORT = 5432
-# DATABASE_NAME = app
-# DATABASE_USER = app
-# DATABASE_PASSWORD = (senha definida no apply)
-```
+| Arquivo               | Classe        | Storage | Multi-AZ | Delete Protection |
+| --------------------- | ------------- | ------- | -------- | ----------------- |
+| `environments/dev.tfvars`     | db.t3.micro   | 20 GB   | false    | false             |
+| `environments/staging.tfvars` | db.t3.small   | 20 GB   | false    | false             |
+| `environments/prod.tfvars`    | db.r6g.large  | 50 GB   | true     | true              |

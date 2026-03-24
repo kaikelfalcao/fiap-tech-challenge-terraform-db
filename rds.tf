@@ -1,3 +1,15 @@
+# Senha gerada automaticamente — nunca precisa de secret no GitHub.
+# Lida pelo app via terraform_remote_state (output db_password).
+resource "random_password" "db" {
+  length           = 32
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
+  # lifecycle keep_unchanged evita rotação acidental em re-applies
+  lifecycle {
+    ignore_changes = [length, special, override_special]
+  }
+}
+
 resource "aws_db_subnet_group" "this" {
   name        = "${var.project_name}-${var.environment}-db-subnet"
   description = "Database subnet group using private subnets from K8s VPC"
@@ -60,7 +72,7 @@ resource "aws_db_instance" "this" {
 
   db_name  = var.db_name
   username = var.db_username
-  password = var.db_password
+  password = random_password.db.result
   port     = 5432
 
   multi_az = var.db_multi_az

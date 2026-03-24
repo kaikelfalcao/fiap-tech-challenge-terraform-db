@@ -1,3 +1,6 @@
+backend.tf
+.env.local
+
 # Local .terraform directories
 .terraform/
 
