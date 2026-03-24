@@ -1,0 +1,64 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: terraform-deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  TF_VAR_FILE: environments/dev.tfvars
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.0"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Bootstrap S3 backend
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET="fiap-tc-tfstate-${ACCOUNT_ID}"
+          aws s3 ls "s3://${BUCKET}" > /dev/null 2>&1 || \
+            aws s3 mb "s3://${BUCKET}" --region ${{ env.AWS_REGION }}
+          aws s3api put-bucket-versioning \
+            --bucket "$BUCKET" \
+            --versioning-configuration Status=Enabled 2>/dev/null || true
+          aws s3api put-bucket-encryption \
+            --bucket "$BUCKET" \
+            --server-side-encryption-configuration \
+            '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}' 2>/dev/null || true
+          cat > backend.tf << EOF
+          terraform {
+            backend "s3" {
+              bucket       = "${BUCKET}"
+              key          = "db-infra/terraform.tfstate"
+              region       = "${{ env.AWS_REGION }}"
+              use_lockfile = true
+              encrypt      = true
+            }
+          }
+          EOF
+
+      - run: terraform init -input=false
+
+      - name: Terraform Apply
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var-file="${{ env.TF_VAR_FILE }}"

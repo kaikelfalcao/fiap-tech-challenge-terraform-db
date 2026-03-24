@@ -34,6 +34,12 @@ output "db_arn" {
   value       = aws_db_instance.this.arn
 }
 
+output "db_password" {
+  description = "Database master password (sensitive — stored encrypted in S3 state)"
+  value       = random_password.db.result
+  sensitive   = true
+}
+
 output "db_connection_info" {
   description = "Connection info for the application (set these as environment variables)"
   value = {

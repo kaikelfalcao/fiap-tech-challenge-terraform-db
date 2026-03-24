@@ -53,12 +53,6 @@ variable "db_username" {
   default     = "app"
 }
 
-variable "db_password" {
-  description = "Master password for the database"
-  type        = string
-  sensitive   = true
-}
-
 variable "db_multi_az" {
   description = "Enable multi-AZ deployment"
   type        = bool
@@ -82,3 +76,4 @@ variable "db_skip_final_snapshot" {
   type        = bool
   default     = true
 }
+
